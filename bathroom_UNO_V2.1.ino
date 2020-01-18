@@ -38,7 +38,7 @@ int humidStored;
  bool flashingLED;
  bool LEDFlashOn; // in the loop of flaching to define state of LEDs
  int timeToReadSensor=9940;
- int long timeToSEndData=60000;
+ int long timeToSEndData=11000;//was 60 000
  int humidWarningThreshod=3;
  bool humidWarningPause; 
  int unsigned long humidWaningEnd=1800000;
@@ -196,7 +196,7 @@ if (humidWarning && !fanStart && timer(9,humanSensorDelay))fanStart=true;
 //------------------------end of human sensor-----------------------------------------------------------------------------
 //if (esp8266.available())ReadDataSerial();
 if (Serial.available()) ReadDataSerial();
-if (timer(11,130000))ResetESP();
+//if (timer(11,130000))ResetESP();
 }
 //=================================================================================================================================================
 void ResetESP (){digitalWrite(espReset,LOW);delay(500);digitalWrite(espReset,HIGH);}
@@ -338,7 +338,7 @@ void getSensorData (int sessions){
   strcat(dataSent,",");}
   lengthT = strlen(dataSent);
   dataSent[lengthT-1]='}';}
-  //esp8266.println(dataSent); 
+  esp8266.println(dataSent); 
   Serial.println(dataSent);
   //Serial.print("dataSent ");
   Serial.println(dataSent); 
