@@ -11,6 +11,7 @@ int button=A0;
 int espReset=8; 
 int humanSensor=A1;
 int humadLED=A2;
+int humidGotFromServer = 0;
 AM2320 sensor(4,5); // AM2320 sensor attached SDA to digital PIN 4 and SCL to digital PIN 5
 SoftwareSerial esp8266(RX,TX);
 int long overallTime=6*60L*1000L;
@@ -44,7 +45,7 @@ int humidStored;
  int unsigned long humidWaningEnd=1800000;
  int unsigned long humanSensorDelay=180000;
  bool humanBodyDeteckted;
-bool const test=true;
+bool const test=false;
 bool addHumidToArray; 
 bool buttonPresedWhilePause;
  
@@ -202,19 +203,51 @@ if (Serial.available()) ReadDataSerial();
 void ResetESP (){digitalWrite(espReset,LOW);delay(500);digitalWrite(espReset,HIGH);}
 void ReadDataSerial(){ //reads data from ESP serial and checks for validity then sens responce by G:xxx], if gets re:from100 to 299 than LEDOK ON
 bool startServRespRead=false;
-char ch;
- int i=0;
+String message;
+ 
   //while (esp8266.available()){
- while (Serial.available()) {
-    //ch = esp8266.read(); delay(1.5); Serial.print(ch); 
-	 ch = Serial.read(); delay(1.5); Serial.print(ch);
-     if (!startServRespRead && ch=='R'){startServRespRead=true;i++;}
-     else if (startServRespRead && i==1 && ch==':'){i++;}
-     else if (startServRespRead && i==2){if (ch=='1'|| ch=='2'){
-                                         timers[11]=millis();};
-                                          startServRespRead=false;
-                                          i=0;}
-                            }
+if (esp8266.available()) {
+	message = esp8266.readStringUntil('\r');
+	Serial.println(message);
+	unsigned long value;
+	int index;
+	int humid;
+	if (get_field_value(message, "humid:", &value, &index)) {
+		humid = value / pow(10, index);
+		Serial.print("Humid recognised: ");                         // print the content
+		Serial.println(humid);
+		humidGotFromServer = humid; 
+	}
+	}                      
+}
+bool get_field_value(String Message, String field, unsigned long* value, int* index) {
+	int fieldBegin = Message.indexOf(field) + field.length();
+	int check_field = Message.indexOf(field);
+	int ii = 0;
+	*value = 0;
+	*index = 0;
+	bool indFloat = false;
+	if (check_field != -1) {
+		int filedEnd = Message.indexOf(';', fieldBegin);
+		if (filedEnd == -1) { return false; }
+		int i = 1;
+		char ch = Message[filedEnd - i];
+		while (ch != ' ' && ch != ':') {
+			if (isDigit(ch)) {
+				int val = ch - 48;
+				if (!indFloat)ii = i - 1;
+				else ii = i - 2;
+				*value = *value + ((val * pow(10, ii)));
+			}
+			else if (ch == '.') { *index = i - 1; indFloat = true; }
+			i++;
+			if (i > (filedEnd - fieldBegin + 1) || i > 10)break;
+			ch = Message[filedEnd - i];
+		}
+
+	}
+	else return false;
+	return true;
 }
 
 void humidArray(int sensorRead)
