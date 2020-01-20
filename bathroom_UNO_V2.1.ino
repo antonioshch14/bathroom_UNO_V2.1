@@ -196,18 +196,14 @@ else digitalWrite(humadLED,LOW);
 if (humidWarning && !fanStart && timer(9,humanSensorDelay))fanStart=true;
 //------------------------end of human sensor-----------------------------------------------------------------------------
 //if (esp8266.available())ReadDataSerial();
-if (Serial.available()) ReadDataSerial();
+if (esp8266.available()) ReadDataSerial();
 //if (timer(11,130000))ResetESP();
 }
 //=================================================================================================================================================
 void ResetESP (){digitalWrite(espReset,LOW);delay(500);digitalWrite(espReset,HIGH);}
 void ReadDataSerial(){ //reads data from ESP serial and checks for validity then sens responce by G:xxx], if gets re:from100 to 299 than LEDOK ON
 bool startServRespRead=false;
-String message;
- 
-  //while (esp8266.available()){
-if (esp8266.available()) {
-	message = esp8266.readStringUntil('\r');
+String message = esp8266.readStringUntil('\r');
 	Serial.println(message);
 	unsigned long value;
 	int index;
@@ -218,7 +214,7 @@ if (esp8266.available()) {
 		Serial.println(humid);
 		humidGotFromServer = humid; 
 	}
-	}                      
+	                   
 }
 bool get_field_value(String Message, String field, unsigned long* value, int* index) {
 	int fieldBegin = Message.indexOf(field) + field.length();
@@ -250,8 +246,8 @@ bool get_field_value(String Message, String field, unsigned long* value, int* in
 	return true;
 }
 
-void humidArray(int sensorRead)
-  {int i,ii, sum=0;
+void humidArray(int sensorRead)  {
+	int i,ii, sum=0;
    float humidAverRead;
    
     for (i=0; i<sensorRead; i++){sum+=sensorData[i][1];} // count average read for a minut from sensor
@@ -260,6 +256,7 @@ void humidArray(int sensorRead)
    if (humidAverRead-HumidAver>humidWarningThreshod){humidWarning=true;}
    else { countHumid(humidAverRead);
           addHumidToArray=false; //reset adding humid to array after once added
+		  if (humidWarning) { digitalWrite(LED1, LOW); digitalWrite(LED2, LOW); digitalWrite(LED3, LOW); }//solving issue with occasional LED
           humidWarning=false;
           humidWarningPause=false;
           timers[10]=millis(); // resetting timers in case of rising humid while fan on (without humid warning)
@@ -277,7 +274,14 @@ void countHumid(float humidAverRead){
   int ii;
  humid[humidStored]=(int)humidAverRead;  // for initial start before 100 have counted
           if (!coutnFull) {for (ii=1;ii<=humidStored;ii++){sumOverall+=humid[ii];}
-                            HumidAver=sumOverall/humidStored;}
+		  if (humidGotFromServer > 0) {
+			  HumidAver = humidGotFromServer;//assign humid value for server after restart
+			  for (int iii = 1; iii < maxHumStored; iii++) humid[iii]= humidGotFromServer;
+			  coutnFull = true;
+			  Serial.println("the humidity array filled with humidity got from server " + String(humidGotFromServer));
+		  }
+							else HumidAver=sumOverall/humidStored;
+		  }
           else {for (ii=1;ii< maxHumStored;ii++){sumOverall+=humid[ii];}
                     HumidAver=sumOverall/(maxHumStored-1);
                }
