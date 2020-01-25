@@ -22,7 +22,7 @@ float sensorData[7][4];
 int session; // counts how many times the data from sensors was read befor sending
 int long SeccountT;
 int long LEDTime=overallTime/3;
-int unsigned long timers[13]; //0-bouncing of pushed button , 1- bouncing of released button, 2- reset of counting type and direction of counting, 
+int unsigned long timers[14]; //0-bouncing of pushed button , 1- bouncing of released button, 2- reset of counting type and direction of counting, 
                           // 3- second for continious counting, 4- count down of fan, 5 reading sensors, 6- sending data, 7-econd for steps counting,
                           // 8- for blocking sensors read while button pushing, 9-human sensor for activation of fan, 10-counter of humidWarning alarm,
                           // 11-ESP reset , 12-start while pause
@@ -62,6 +62,7 @@ pinMode(espReset,OUTPUT);
 digitalWrite(espReset,HIGH);
 pinMode(humanSensor,INPUT);
 pinMode(humadLED,OUTPUT);
+digitalWrite(relay, HIGH);
 
 if (test){
           overallTime=1*60L*1000L;
@@ -146,8 +147,8 @@ else if(buttonPressed==HIGH && timer(1,100))
    timers[0]=millis();                        // resetting of timer for pushed button
    }
    //----------------------------------fan operation-------------------------------------------------
- if (!humidWarningPause && fanStart){digitalWrite(relay,HIGH);}
- else {digitalWrite(relay,LOW);}
+ if (!humidWarningPause && fanStart){digitalWrite(relay,LOW);}
+ else {digitalWrite(relay,HIGH);}
  //-------------------------------start of humid-----------------------------------------------------
  if (!buttonStart && timer(4,1000))
   {   if (!humidWarning){if (fanStart && !buttonStart)
@@ -197,7 +198,7 @@ if (humidWarning && !fanStart && timer(9,humanSensorDelay))fanStart=true;
 //------------------------end of human sensor-----------------------------------------------------------------------------
 //if (esp8266.available())ReadDataSerial();
 if (esp8266.available()) ReadDataSerial();
-//if (timer(11,130000))ResetESP();
+if (timer(11,130000))ResetESP();
 }
 //=================================================================================================================================================
 void ResetESP (){digitalWrite(espReset,LOW);delay(500);digitalWrite(espReset,HIGH);}
@@ -213,6 +214,7 @@ String message = esp8266.readStringUntil('\r');
 		Serial.print("Humid recognised: ");                         // print the content
 		Serial.println(humid);
 		humidGotFromServer = humid; 
+		timers[11] = millis();//postpond esp reset
 	}
 	                   
 }
