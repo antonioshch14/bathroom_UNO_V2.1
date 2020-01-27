@@ -28,7 +28,6 @@ int unsigned long timers[14]; //0-bouncing of pushed button , 1- bouncing of rel
                           // 11-ESP reset , 12-start while pause
 
 //-------------------------humid Array
-bool hcount; //wheter 100 reading have done
 int maxHumStored=100; //how many entry to store
 int humid[100]; //storage of read humidity
 bool humidWarning; //triger of flashing LED and prolong rotation of fan
@@ -45,6 +44,7 @@ int humidStored;
  int unsigned long humidWaningEnd=1800000;
  int unsigned long humanSensorDelay=180000;
  bool humanBodyDeteckted;
+ bool humanSensorOn;
 bool const test=false;
 bool addHumidToArray; 
 bool buttonPresedWhilePause;
@@ -189,7 +189,7 @@ else if(buttonPressed==HIGH && timer(1,100))
                       timers[5]=millis();}
       }
 //-------------------------human sensor------------------------------------------------------------------------------------
-bool humanSensorOn;
+
 if (!test) humanSensorOn=digitalRead(humanSensor);
 else {humanSensorOn=false;}
 if (humanSensorOn){digitalWrite(humadLED,HIGH);timers[9]=millis();humanBodyDeteckted=true;}
@@ -275,15 +275,15 @@ void countHumid(float humidAverRead){
   int sumOverall=0;
   int ii;
  humid[humidStored]=(int)humidAverRead;  // for initial start before 100 have counted
-          if (!coutnFull) {for (ii=1;ii<=humidStored;ii++){sumOverall+=humid[ii];}
+  if (!coutnFull) {for (ii=1;ii<=humidStored;ii++){sumOverall+=humid[ii];}
 		  if (humidGotFromServer > 0) {
 			  HumidAver = humidGotFromServer;//assign humid value for server after restart
-			  for (int iii = 1; iii < maxHumStored; iii++) humid[iii]= humidGotFromServer;
+			  for (int iii = 0; iii < maxHumStored; iii++) humid[iii]= humidGotFromServer;
 			  coutnFull = true;
 			  Serial.println("the humidity array filled with humidity got from server " + String(humidGotFromServer));
 		  }
-							else HumidAver=sumOverall/humidStored;
-		  }
+			else HumidAver=sumOverall/humidStored;
+}
           else {for (ii=1;ii< maxHumStored;ii++){sumOverall+=humid[ii];}
                     HumidAver=sumOverall/(maxHumStored-1);
                }
@@ -329,6 +329,7 @@ bool timer(int tNamber, unsigned long tDelay){
 }
 
 void getSensorData (int sessions){
+	byte state=B00000000;// construction of state
       float temp, humidity;
       bool datamissed=false;
       switch(sensor.Read()) {
@@ -355,11 +356,15 @@ void getSensorData (int sessions){
                     sensorData[sessions][1] = humidity;
                     if (HumidAver <100 ) {sensorData[sessions][2]=HumidAver;}
                     else {sensorData[sessions][2]=10;}
-                    if (fanStart && !humidWarningPause) {if (humanBodyDeteckted) sensorData[sessions][3] = 3;
-                                                         else {sensorData[sessions][3] = 2;}}
-                    else {if (humanBodyDeteckted) sensorData[sessions][3] = 1;
-                          else {sensorData[sessions][3] = 0;}}
-                    humanBodyDeteckted=false;
+					if (fanStart)bitWrite(state, 0, 1);
+					if (humanBodyDeteckted)bitWrite(state, 1, 1);
+					if (humidWarningPause)bitWrite(state, 2, 1);
+					if (humidWarning)bitWrite(state, 3, 1);
+					if (coutnFull)bitWrite(state, 4, 1);
+					if (addHumidToArray)bitWrite(state, 5, 1);
+					if (buttonPresedWhilePause)bitWrite(state, 6, 1);
+					sensorData[sessions][3] =int(state);
+				    humanBodyDeteckted=false;//reset body detection after writing to send data
                     }
    else {session--;}
 }
