@@ -8,6 +8,7 @@ int LED2=9;
 int LED3=10;
 int relay=12;
 int button=A0;
+int light = 11; //switching mirror light
 int espReset=8; 
 int humanSensor=A1;
 int humadLED=A2;
@@ -25,7 +26,7 @@ int long LEDTime=overallTime/3;
 int unsigned long timers[14]; //0-bouncing of pushed button , 1- bouncing of released button, 2- reset of counting type and direction of counting, 
                           // 3- second for continious counting, 4- count down of fan, 5 reading sensors, 6- sending data, 7-econd for steps counting,
                           // 8- for blocking sensors read while button pushing, 9-human sensor for activation of fan, 10-counter of humidWarning alarm,
-                          // 11-ESP reset , 12-start while pause
+                          // 11-ESP reset , 12-start while pause; 13- light on
 
 //-------------------------humid Array
 int maxHumStored=100; //how many entry to store
@@ -45,6 +46,8 @@ int humidStored;
  int unsigned long humanSensorDelay=180000;
  bool humanBodyDeteckted;
  bool humanSensorOn;
+ bool lightOff;
+ int unsigned long lightOffDelay = 30000;
 bool const test=false;
 bool addHumidToArray; 
 bool buttonPresedWhilePause;
@@ -63,6 +66,8 @@ digitalWrite(espReset,HIGH);
 pinMode(humanSensor,INPUT);
 pinMode(humadLED,OUTPUT);
 digitalWrite(relay, HIGH);
+pinMode(light, OUTPUT);
+digitalWrite(light, HIGH);
 
 if (test){
           overallTime=1*60L*1000L;
@@ -192,11 +197,20 @@ else if(buttonPressed==HIGH && timer(1,100))
 
 if (!test) humanSensorOn=digitalRead(humanSensor);
 else {humanSensorOn=false;}
-if (humanSensorOn){digitalWrite(humadLED,HIGH);timers[9]=millis();humanBodyDeteckted=true;}
+if (humanSensorOn) { digitalWrite(humadLED, HIGH); timers[9] = millis(); humanBodyDeteckted = true; }
 else digitalWrite(humadLED,LOW);
 if (humidWarning && !fanStart && timer(9,humanSensorDelay))fanStart=true;
 //------------------------end of human sensor-----------------------------------------------------------------------------
-//if (esp8266.available())ReadDataSerial();
+if (humanBodyDeteckted) {
+	timers[13] = millis(); 
+	lightOff = false;
+	digitalWrite(light, HIGH);
+	}
+if (!lightOff)if (timer(13, lightOffDelay)) {
+	digitalWrite(light, LOW);
+	lightOff = true;
+}
+//---------------------end of light off----------------------------------------------------------------------------
 if (esp8266.available()) ReadDataSerial();
 if (timer(11,130000))ResetESP();
 }
@@ -363,6 +377,7 @@ void getSensorData (int sessions){
 					if (coutnFull)bitWrite(state, 4, 1);
 					if (addHumidToArray)bitWrite(state, 5, 1);
 					if (buttonPresedWhilePause)bitWrite(state, 6, 1);
+					if (!lightOff)bitWrite(state, 7, 1);
 					sensorData[sessions][3] =int(state);
 				    humanBodyDeteckted=false;//reset body detection after writing to send data
                     }
