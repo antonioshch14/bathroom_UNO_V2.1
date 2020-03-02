@@ -47,7 +47,7 @@ int humidStored;
  bool humanBodyDeteckted;
  bool humanSensorOn;
  bool lightOff;
- int unsigned long lightOffDelay = 30000;
+ int unsigned long lightOffDelay = 120000;
 bool const test=false;
 bool addHumidToArray; 
 bool buttonPresedWhilePause;
