@@ -9,6 +9,9 @@ int LED3=10;
 int relay=12;
 int button=A0;
 int light = 11; //switching mirror light
+int deodorant = 13; //relay of the deodorant
+bool deodorantStart;
+int deodorantDelay =1500;
 int espReset=8; 
 int humanSensor=A1;
 int humadLED=A2;
@@ -58,6 +61,7 @@ void setup() {
   pinMode(LED1,OUTPUT);
   pinMode(LED2,OUTPUT);
   pinMode(LED3,OUTPUT);
+  pinMode(deodorant, OUTPUT);
 pinMode(button,INPUT);
 digitalWrite(button,HIGH);
 pinMode(relay,OUTPUT);
@@ -91,6 +95,7 @@ if (buttonPressed==LOW && timer(0,100))
                                   buttonPressedCount=1;
                                   fanStart=true;
                                   timers[3]=millis()-201;
+								  deodorantStart = true;
                                   }
   if (buttonStart)
      {if (timer(3,200))          //for continous stetting
@@ -102,6 +107,7 @@ if (buttonPressed==LOW && timer(0,100))
                                         {countDown=false;
                                         timers[3]=millis()+2000;
                                         fanStart=false;
+										deodorantStart = false;
                                         Serial.println("fan off 1 executed");} // delay in case of turnover
          else if (!countDown) { buttonPressedCount++;
                                 LEDcontrol(buttonPressedCount,2,false);
@@ -130,8 +136,11 @@ if (buttonPressed==LOW && timer(0,100))
                           else if (buttonPressedCount<=0){countDown=false;
                           Serial.println("fan off 2 executed");
                           timers[7]=millis()+2000;
-                          fanStart=false;}
+                          fanStart=false;
+						  deodorantStart = false;
+						  }
                           buttonStart=true; // to initiate continious counting in case of holding button 
+						 
                           }}
          timers[2]=millis(); //resetting of timer for type of counting
          timers[1]=millis();  // resetting of timer for released button
@@ -153,7 +162,12 @@ else if(buttonPressed==HIGH && timer(1,100))
    }
    //----------------------------------fan operation-------------------------------------------------
  if (!humidWarningPause && fanStart){digitalWrite(relay,LOW);}
- else {digitalWrite(relay,HIGH);}
+ else {digitalWrite(relay,HIGH);
+		if (deodorantStart) {
+			 deodorantSpray();
+			 deodorantStart = false;
+			 }
+ }
  //-------------------------------start of humid-----------------------------------------------------
  if (!buttonStart && timer(4,1000))
   {   if (!humidWarning){if (fanStart && !buttonStart)
@@ -215,6 +229,11 @@ if (esp8266.available()) ReadDataSerial();
 if (timer(11,130000))ResetESP();
 }
 //=================================================================================================================================================
+void deodorantSpray() {
+	digitalWrite(deodorant, HIGH);
+	delay(deodorantDelay);
+	digitalWrite(deodorant, LOW);
+}
 void ResetESP (){digitalWrite(espReset,LOW);delay(500);digitalWrite(espReset,HIGH);}
 void ReadDataSerial(){ //reads data from ESP serial and checks for validity then sens responce by G:xxx], if gets re:from100 to 299 than LEDOK ON
 bool startServRespRead=false;
@@ -230,7 +249,22 @@ String message = esp8266.readStringUntil('\r');
 		humidGotFromServer = humid; 
 		timers[11] = millis();//postpond esp reset
 	}
+	else if (get_field_value(message, "fanStart:", &value, &index)) fanStartWeb((int)value);
+	else if (get_field_value(message, "fanStop:", &value, &index))fanStopWeb();
+	else if (get_field_value(message, "airvickPush:", &value, &index)) airvickPushWeb();
 	                   
+}
+void inline airvickPushWeb() {
+
+}
+void inline fanStopWeb() {
+	SeccountT = 0;
+	fanStart = false;
+}
+void inline fanStartWeb(int timeToStart) {
+	fanStart = true;
+	SeccountT = timeToStart;
+	humidWarningPause = false;
 }
 bool get_field_value(String Message, String field, unsigned long* value, int* index) {
 	int fieldBegin = Message.indexOf(field) + field.length();
@@ -334,10 +368,10 @@ void LEDcontrol(int long t,int long s, bool flashing){
           
 }
   
-bool timer(int tNamber, unsigned long tDelay){
+bool timer(int tNumber, unsigned long tDelay){
   unsigned long current=millis();
-    if (current>(timers[tNamber]+tDelay)){
-     timers[tNamber]=current; return true;
+    if (current>(timers[tNumber]+tDelay)){
+     timers[tNumber]=current; return true;
      }
     else return false;
 }
