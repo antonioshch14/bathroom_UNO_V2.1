@@ -3,230 +3,316 @@
 #include <AM2320.h>
 #define RX 2 //esp settings
 #define TX 3 //esp settings
-int LED1=6;
-int LED2=9;
-int LED3=10;
-int relay=12;
-int button=A0;
-int light = 11; //switching mirror light
-int deodorant = 13; //relay of the deodorant
-bool deodorantStart;
-int deodorantDelay =1500;
-int espReset=8; 
-int humanSensor=A1;
-int humadLED=A2;
-int humidGotFromServer = 0;
-AM2320 sensor(4,5); // AM2320 sensor attached SDA to digital PIN 4 and SCL to digital PIN 5
-SoftwareSerial esp8266(RX,TX);
-int long overallTime=6*60L*1000L;
-bool buttonStart, fanStart,countDown,buttonStartEnd;
-int buttonPressedCount;
-char dataSent[500];
-float sensorData[7][4];
-int session; // counts how many times the data from sensors was read befor sending
-int long SeccountT;
-int long LEDTime=overallTime/3;
-int unsigned long timers[14]; //0-bouncing of pushed button , 1- bouncing of released button, 2- reset of counting type and direction of counting, 
-                          // 3- second for continious counting, 4- count down of fan, 5 reading sensors, 6- sending data, 7-econd for steps counting,
-                          // 8- for blocking sensors read while button pushing, 9-human sensor for activation of fan, 10-counter of humidWarning alarm,
-                          // 11-ESP reset , 12-start while pause; 13- light on
+#define LED1 6
+#define LED2 9
+#define LED3 10
+#define relay 12
+#define button A0
+#define light  11 //switching mirror light
+#define deodorant  A5 //relay of the deodorant
+#define deodorantDelay 600
+#define espReset 8
+#define humanSensor A1
+#define humadLED A2
+#define maxHumStored 100 //how many entry to store
+#define lightOffDelay 300000
+//#define test
+#ifdef test
+#define overallTime 60000
+#define timeToSEndData 10000
+#define timeToReadSensor 994
+#define humidWaningEnd 60000
+#define humidWarningThreshod  2
+#define LOG(X) Serial.println(X);
+#define LOGL(X)  Serial.print(X);
+#else
+#define overallTime 360000
+#define timeToSEndData 5000
+#define timeToReadSensor 940
+#define humidWaningEnd 1800000
+#define humidWarningThreshod  3
+#define LOG(X) 
+#define LOGL(X) 
+#endif
 
-//-------------------------humid Array
-int maxHumStored=100; //how many entry to store
-int humid[100]; //storage of read humidity
-bool humidWarning; //triger of flashing LED and prolong rotation of fan
-int humidStored;
- bool coutnFull;
- int HumidAver;
- //----------------------------------------------------------------
- bool flashingLED;
- bool LEDFlashOn; // in the loop of flaching to define state of LEDs
- int timeToReadSensor=9940;
- int long timeToSEndData=11000;//was 60 000
- int humidWarningThreshod=3;
- bool humidWarningPause; 
- int unsigned long humidWaningEnd=1800000;
- int unsigned long humanSensorDelay=180000;
- bool humanBodyDeteckted;
- bool humanSensorOn;
- bool lightOff;
- int unsigned long lightOffDelay = 120000;
-bool const test=false;
-bool addHumidToArray; 
-bool buttonPresedWhilePause;
- 
-void setup() {
-  Serial.begin(9600); 
-  esp8266.begin(9600);
-  pinMode(LED1,OUTPUT);
-  pinMode(LED2,OUTPUT);
-  pinMode(LED3,OUTPUT);
-  pinMode(deodorant, OUTPUT);
-pinMode(button,INPUT);
-digitalWrite(button,HIGH);
-pinMode(relay,OUTPUT);
-pinMode(espReset,OUTPUT);
-digitalWrite(espReset,HIGH);
-pinMode(humanSensor,INPUT);
-pinMode(humadLED,OUTPUT);
-digitalWrite(relay, HIGH);
-pinMode(light, OUTPUT);
-digitalWrite(light, HIGH);
-
-if (test){
-          overallTime=1*60L*1000L;
-          timeToSEndData=6000;
-          timeToReadSensor=994;
-          humidWaningEnd=60000UL;
-          LEDTime=overallTime/3;
-          humanSensorDelay=5000;
-          humidWarningThreshod=2;
-          maxHumStored=5; //how many entry to store
-          }
-}
-
-void loop() {
-int unsigned long left; // counter of a time that lesft fo timers
-int buttonPressed=digitalRead(button);
-//--------------------------------button pushed-------------------------------------
-if (buttonPressed==LOW && timer(0,100))
-  {
-  if (!buttonStart && !fanStart){ buttonStart=true;
-                                  buttonPressedCount=1;
-                                  fanStart=true;
-                                  timers[3]=millis()-201;
-								  deodorantStart = true;
-                                  }
-  if (buttonStart)
-     {if (timer(3,200))          //for continous stetting
-       { if(!countDown && buttonPressedCount>=6)
-                                  {countDown=true;  //to define whether conting up or down
-                                  timers[3]=millis()+2000; // delay in case of turnover
-                                  }
-        else if (countDown && buttonPressedCount<=0)
-                                        {countDown=false;
-                                        timers[3]=millis()+2000;
-                                        fanStart=false;
-										deodorantStart = false;
-                                        Serial.println("fan off 1 executed");} // delay in case of turnover
-         else if (!countDown) { buttonPressedCount++;
-                                LEDcontrol(buttonPressedCount,2,false);
-                                SeccountT=overallTime*buttonPressedCount/6;
-                               }
-         else if (countDown)  {buttonPressedCount--;
-                                LEDcontrol(buttonPressedCount,2,false);
-                                SeccountT=overallTime*buttonPressedCount/6;}
-                                // Serial.print("+++ btc=");Serial.print(buttonPressedCount); Serial.print("ScT=");Serial.println(SeccountT);
-        }
-      }
-  else if (!buttonStart)                            //for  setting by steps
-      {if(timer(7,50))  { if (!countDown )
-                                {buttonPressedCount++;
-                                 LEDcontrol(buttonPressedCount,2,false);
-                                 SeccountT=overallTime*buttonPressedCount/6;
-                                 // Serial.print("*** btc=");Serial.print(buttonPressedCount); Serial.print("  ScT=");Serial.println(SeccountT);
-                                 }
-                         else if (countDown )
-                              {buttonPressedCount--;
-                              LEDcontrol(buttonPressedCount,2,false);
-                              SeccountT=overallTime*buttonPressedCount/6;
-                              // Serial.print("--- btc=");Serial.print(buttonPressedCount); Serial.print("  ScT=");Serial.println(SeccountT);
-                              }
-                          if ( buttonPressedCount>=6){countDown=true; }
-                          else if (buttonPressedCount<=0){countDown=false;
-                          Serial.println("fan off 2 executed");
-                          timers[7]=millis()+2000;
-                          fanStart=false;
-						  deodorantStart = false;
-						  }
-                          buttonStart=true; // to initiate continious counting in case of holding button 
-						 
-                          }}
-         timers[2]=millis(); //resetting of timer for type of counting
-         timers[1]=millis();  // resetting of timer for released button
-         timers[8]=millis(); buttonStartEnd=false; //resetting of timer for blocking sensors data read and send
-         timers[12]=millis(); if (humidWarning) buttonPresedWhilePause=true; // repeating start while pause
-    }
-  //--------------------------------button released-------------------------------------------------
-else if(buttonPressed==HIGH && timer(1,100))
-  {if (buttonStart){buttonStart=false;}  // turn off counitious counting and start of step counting
- if (humidWarningPause && buttonPresedWhilePause && timer(12,2000)) {humidWarningPause=false; //for starting fan while pause 
-                                            buttonPresedWhilePause=false;
-                                            timers[10]=millis()+humidWaningEnd-SeccountT;
-                                            Serial.print("SeccountT= ");Serial.println(SeccountT);
-                                            Serial.println("buttonPresedWhilePause");}// setting time for fan in case of starting in warning pause
-   if (timer(2,5000)){countDown=false;   // reset of counting type
-                      buttonStart=false;
-                      buttonPresedWhilePause=false;}   //to restart the continous setting
-   timers[0]=millis();                        // resetting of timer for pushed button
-   }
-   //----------------------------------fan operation-------------------------------------------------
- if (!humidWarningPause && fanStart){digitalWrite(relay,LOW);}
- else {digitalWrite(relay,HIGH);
-		if (deodorantStart) {
-			 deodorantSpray();
-			 deodorantStart = false;
-			 }
- }
- //-------------------------------start of humid-----------------------------------------------------
- if (!buttonStart && timer(4,1000))
-  {   if (!humidWarning){if (fanStart && !buttonStart)
-                          {SeccountT-=1000; 
-                           LEDcontrol(SeccountT,LEDTime,false);
-                           buttonPressedCount=6*SeccountT/overallTime;     
-                           if (SeccountT<=0){fanStart=false;} //fan stop
-                          }
-                        }
-      else if (humidWarning) {if (fanStart){ if (!humidWarningPause){ left= (humidWaningEnd + timers[10]-millis()); 
-                                                  //Serial.print("left= ");Serial.println(left);
-                                                 // Serial.print("humidWaningEnd= ");Serial.println(humidWaningEnd);
-                                                  //Serial.print("timers[10] ");Serial.println(timers[10]);
-                                                 // Serial.print("millis()");Serial.println(millis());
-                                                  LEDcontrol(left,humidWaningEnd/3,true);
-                                                  SeccountT=2000;}
-                                              else  { left= (humidWaningEnd/3 + timers[10]-millis()); //flashing while pause is on
-                                                  LEDcontrol(left,humidWaningEnd/9,true);} 
-                                            }                         
-                         else if (!fanStart) {LEDcontrol(3,1,true);} //flashing alert befor button has pushed
-                              }
-  }
-  if (fanStart){ // fan pause setting
-              if (!humidWarningPause && humidWarning){if (timer(10,humidWaningEnd)) {humidWarningPause=true;
-                                                                                     addHumidToArray=true;}} //add every pause loop one entry with hight humid to array
-              if (humidWarningPause && humidWarning){if (timer(10,humidWaningEnd/3)) {humidWarningPause=false;}}
-              }
-// ------------------------------------end of humid----------------------------------------------------------------
-  if (timer(8,5000))buttonStartEnd=true; 
-  if (buttonStartEnd) // do not read sensor data while pressing button
-      {
-        if ( timer(5,timeToReadSensor)){getSensorData(session); 
-                             session++;}
-        if (session>0 && timer(6,timeToSEndData)) { 
-                       humidArray(session);
-                      dataSending(session-1); 
-                      session=0; 
-                      timers[5]=millis();}
-      }
-//-------------------------human sensor------------------------------------------------------------------------------------
-
-if (!test) humanSensorOn=digitalRead(humanSensor);
-else {humanSensorOn=false;}
-if (humanSensorOn) { digitalWrite(humadLED, HIGH); timers[9] = millis(); humanBodyDeteckted = true; }
-else digitalWrite(humadLED,LOW);
-if (humidWarning && !fanStart && timer(9,humanSensorDelay))fanStart=true;
-//------------------------end of human sensor-----------------------------------------------------------------------------
-if (humanBodyDeteckted) {
-	timers[13] = millis(); 
-	lightOff = false;
-	digitalWrite(light, HIGH);
+AM2320 sensor(4, 5); // AM2320 sensor attached SDA to digital PIN 4 and SCL to digital PIN 5
+//SoftwareSerial esp8266(RX, TX);
+#define humidReadArraylength 12
+void deodorantSpray();
+class task {
+public:
+	unsigned long period;
+	bool ignor = false;
+	void reLoop() {
+		taskLoop = millis();
+	};
+	bool check() {
+		if (!ignor) {
+			if (millis() - taskLoop > period) {
+				taskLoop = millis();
+				return true;
+			}
+		}
+		return false;
 	}
-if (!lightOff)if (timer(13, lightOffDelay)) {
+	void StartLoop(unsigned long shift) {
+		taskLoop = millis() + shift;
+	}
+	task(unsigned long t) {
+		period = t;
+	}
+private:
+	unsigned long taskLoop;
+
+};
+task task_checkFan(1000);
+task task_lighOn(lightOffDelay);
+task task_readSensors(timeToReadSensor);
+task task_sednData(timeToSEndData);
+task task_addToHumidArrayDuringHumWarn(humidWaningEnd/2);
+task task_LED(1000);
+struct _fan {
+	const unsigned long _timeToWork;//working time for normal operation
+	int _gradeFanToWork;//one of three 1,2,3
+	unsigned long _timeToWorkHumid; //working time for humid warning
+	unsigned long _timeToWorkWeb;
+	int _pauseRatio;// relevant time for pause
+	unsigned long startOfFanWork; //time when a fan start to work
+	unsigned long startOfFanWorkWeb;
+	unsigned long _startPause;
+	unsigned long _timePause;
+	bool buttonStart;
+	bool humidStart;
+	bool webStart;
+	bool fanWork;
+	bool startPuase;
+	bool deodorantActivated;
+	_fan(unsigned long timeToWork, unsigned long timeToWorkOthers, int pauseRatio) :
+		_timeToWork(timeToWork), _timeToWorkHumid(timeToWorkOthers), _pauseRatio(pauseRatio) {}
+	bool checkToWork() {
+		unsigned long current = millis();
+		fanWork = false;//each loop prove that fan has to be ON
+		if (buttonStart && startOfFanWork + _timeToWork * _gradeFanToWork < current) buttonStart = false;
+		if (webStart && startOfFanWorkWeb + _timeToWorkWeb < current) webStart = false;
+		if (humidStart && startOfFanWork + _timeToWorkHumid < current && !webStart && !buttonStart && !startPuase) setPauseHumid();
+		if (startPuase && _startPause + _timePause < current) humidStartOfFan();
+		if (buttonStart) fanWork = true;
+		if (!humidStart) startPuase = false;// force pause off if humid warning off
+		if (humidStart && !startPuase) 	fanWork = true;
+		if (webStart) fanWork = true;
+		if (fanWork) { 
+			digitalWrite(relay, HIGH);
+			return true;
+		} else {
+			digitalWrite(relay, LOW);
+			if (deodorantActivated) { // spray deodorant after fan off once deodorantActivated is true
+				deodorantSpray();
+				deodorantActivated = false;
+			}
+			return false;
+		}
+	}
+	void setPauseHumid()
+	{
+		startPuase = true;
+		_startPause = millis();
+		_timePause = _timeToWorkHumid / _pauseRatio;
+	}
+	void buttonStartFunc(int level) {
+		if (level >= 0 && level<4) _gradeFanToWork = level;
+		else _gradeFanToWork = 3;
+		buttonStart = true;
+		startOfFanWork = millis();
+		digitalWrite(relay, HIGH);
+	}
+	void webStartFunc(unsigned long& timeToWork) {
+		webStart = true;
+		startOfFanWorkWeb = millis();
+		_timeToWorkWeb = timeToWork;
+	}
+	void humidStartOfFan () {
+		humidStart = true;
+		startPuase = false;
+		startOfFanWork = millis();
+	}
+	int getButtonLevel() {
+		if (buttonStart) {
+			return _gradeFanToWork;
+		}
+		else return 0;
+	}
+	unsigned long leftTime(unsigned long& setTime) {
+		if (buttonStart) {
+			setTime = _timeToWork * _gradeFanToWork;
+			if (startOfFanWork + _timeToWork * _gradeFanToWork > millis()) return startOfFanWork + _timeToWork * _gradeFanToWork - millis();
+			return 0;
+			}
+		if (startPuase) {
+			setTime = _timePause;
+			if (_startPause + _timePause > millis()) return _startPause + _timePause - millis();
+			return 0;
+		}
+		if (humidStart) {
+			setTime = _timeToWorkHumid;
+			if (startOfFanWork + _timeToWorkHumid > millis()) return startOfFanWork + _timeToWorkHumid - millis();
+			return 0;
+		}
+		if (webStart) {
+			setTime = _timeToWorkWeb;
+			if (startOfFanWorkWeb + _timeToWorkWeb > millis()) return startOfFanWorkWeb + _timeToWorkWeb - millis();
+			return 0;
+		}
+		return 0;
+	}
+};
+_fan fan(overallTime, humidWaningEnd, 4);
+struct _sensor {
+	float temp;
+	float humidity;
+	bool dodydSensor;
+	bool humanBodyDeteckted;
+};
+_sensor Sensor;
+struct _humid {
+private:
+	int humid[maxHumStored]; //storage of read humidity
+	int humidStored=1;
+	float humidReadArray[humidReadArraylength];
+	int sessionsOfHumidRead;
+public:
+	bool coutnFull;
+	float humidAverRead=0;
+	//bool humidWarning; //triger of flashing LED and prolong rotation of fan
+	int HumidAver=0;
+	void addToHumidReadArray() {
+		if (sessionsOfHumidRead < humidReadArraylength) {
+			sessionsOfHumidRead++;
+		}
+		humidReadArray[sessionsOfHumidRead-1] = Sensor.humidity;
+		
+	}
+	void evaluateHumid() {
+		int i, sum = 0;
+		for (i = 0; i < sessionsOfHumidRead; i++) {
+			sum += humidReadArray[i]; 
+		} // count average read for a minut from sensor
+		humidAverRead = sum / sessionsOfHumidRead;
+		if (HumidAver == 0) {//initial feal
+			HumidAver = (int)humidAverRead;
+			humid[0] = HumidAver;
+		}
+		if (humidAverRead - HumidAver > humidWarningThreshod) {
+			if(!fan.humidStart)fan.humidStartOfFan();
+			if (task_addToHumidArrayDuringHumWarn.ignor) {// add to humid array bit by bit to avoid conctant work in case of sharp humidity rise
+				task_addToHumidArrayDuringHumWarn.reLoop();
+				task_addToHumidArrayDuringHumWarn.ignor = false;
+			}
+			if (task_addToHumidArrayDuringHumWarn.check())humidArray();
+		}
+		else {
+			task_addToHumidArrayDuringHumWarn.ignor = true; //deactivate add humidity
+			humidArray();
+			fan.humidStart = false;
+			//timers[10] = millis(); // resetting timers in case of rising humid while fan on (without humid warning)
+		}
+		LOG("humidAverRead=" + String(humidAverRead) + "  sessionsOfHumidRead=" + String(sessionsOfHumidRead)+ "  humidStored=" +String(humidStored)+" HumidAver="+String(HumidAver))
+		sessionsOfHumidRead = 0;
+	}
+	void populateHumidArray(float h) {
+		if (!coutnFull && h){
+			for (int i = 0; i< maxHumStored; i++) humid[i] = (int)h;
+			coutnFull = true;
+			LOG("the humidity array filled with humidity got from server " + String(h))
+		}
+	}
+private:
+	void inline humidArray() {
+		int lastEntry;
+		if (!coutnFull) lastEntry = humidStored;
+		else lastEntry = maxHumStored;
+		int sumOverall = 0;
+		humid[humidStored] = (int)humidAverRead;  // for initial start before 100 have counted
+		for (int i = 0; i < lastEntry; i++) { sumOverall += humid[i]; }
+		HumidAver = sumOverall / lastEntry;
+		LOG("HumidAver = "+ String(HumidAver))
+		humidStored++;
+		if (humidStored == (maxHumStored - 1)) {
+			coutnFull = true;
+			humidStored = 0;
+		} //return to the beginning of the array when its full
+
+	}
+};
+_humid humid;
+
+void setup() {
+	Serial.begin(9600);
+	//esp8266.begin(9600);
+	pinMode(LED1, OUTPUT);
+	pinMode(LED2, OUTPUT);
+	pinMode(LED3, OUTPUT);
+	pinMode(deodorant, OUTPUT);
+	pinMode(button, INPUT);
+	digitalWrite(button, HIGH);
+	pinMode(relay, OUTPUT);
+	pinMode(espReset, OUTPUT);
+	digitalWrite(espReset, HIGH);
+	pinMode(humanSensor, INPUT);
+	pinMode(humadLED, OUTPUT);
+	digitalWrite(relay, LOW);
+	pinMode(light, OUTPUT);
 	digitalWrite(light, LOW);
-	lightOff = true;
 }
-//---------------------end of light off----------------------------------------------------------------------------
-if (esp8266.available()) ReadDataSerial();
-if (timer(11,130000))ResetESP();
+void setTimeButton() {
+	unsigned long start = millis()+1000;
+	int increment = 1;
+	while (start  > millis()) {
+		delay(100);
+		if (!digitalRead(button)) {
+			start = millis() + 3000;
+			fan.buttonStartFunc(fan.getButtonLevel() + increment);
+			LEDcontrol(fan.getButtonLevel(),1, false);
+			if (fan.getButtonLevel() == 3) {
+				increment = -1;
+				delay(1500);
+			}
+			else if (fan.getButtonLevel() == 0) {
+				increment = 1;
+				delay(1500);
+			}
+			else delay(150);
+		}
+	}
+	if(fan.getButtonLevel()) fan.deodorantActivated = true;
+	else fan.deodorantActivated = false;
+}
+void loop() {
+	if (!digitalRead(button)) setTimeButton();
+	if (task_checkFan.check()) fan.checkToWork();
+	if (digitalRead(humanSensor)) {
+		digitalWrite(humadLED, HIGH);
+		digitalWrite(light, HIGH);
+		task_lighOn.reLoop();
+	}
+	else if (task_lighOn.check()) {
+		digitalWrite(humadLED, LOW);
+		digitalWrite(light, LOW);
+	}
+	if (task_readSensors.check())getSensorData();
+	if (task_sednData.check()) {
+		humid.evaluateHumid();
+		dataSending();
+	}
+	if(task_LED.check()) 
+	{
+		unsigned long setTime;
+		unsigned long leftTime = fan.leftTime(setTime);
+		if (leftTime)	LEDcontrol(leftTime, setTime/3, fan.humidStart);
+		else LEDcontrol(0, 0, false);
+	}
+	//if (esp8266.available()) ReadDataSerial();
+	if (Serial.available()) ReadDataSerial();
+	//if (timer(11, 130000))ResetESP();
 }
 //=================================================================================================================================================
 void deodorantSpray() {
@@ -234,206 +320,120 @@ void deodorantSpray() {
 	delay(deodorantDelay);
 	digitalWrite(deodorant, LOW);
 }
-void ResetESP (){digitalWrite(espReset,LOW);delay(500);digitalWrite(espReset,HIGH);}
-void ReadDataSerial(){ //reads data from ESP serial and checks for validity then sens responce by G:xxx], if gets re:from100 to 299 than LEDOK ON
-bool startServRespRead=false;
-String message = esp8266.readStringUntil('\r');
-	Serial.println(message);
-	unsigned long value;
-	int index;
-	int humid;
-	if (get_field_value(message, "humid:", &value, &index)) {
-		humid = value / pow(10, index);
-		Serial.print("Humid recognised: ");                         // print the content
-		Serial.println(humid);
-		humidGotFromServer = humid; 
-		timers[11] = millis();//postpond esp reset
+void ResetESP() { digitalWrite(espReset, LOW); delay(500); digitalWrite(espReset, HIGH); }
+void ReadDataSerial() { //reads data from ESP serial and checks for validity then sens responce by G:xxx], if gets re:from100 to 299 than LEDOK ON
+	//String message = esp8266.readStringUntil('\r');
+	String message = Serial.readStringUntil('\r');
+	LOG(message)
+	unsigned long ULValue;
+	float floalValue;
+	if (get_field_value(message, "humid:", &ULValue, &floalValue)) {
+		LOGL("Humid recognised: ")                         // print the content
+			LOG(floalValue)
+			humid.populateHumidArray(floalValue);
 	}
-	else if (get_field_value(message, "fanStart:", &value, &index)) fanStartWeb((int)value);
-	else if (get_field_value(message, "fanStop:", &value, &index))fanStopWeb();
-	else if (get_field_value(message, "airvickPush:", &value, &index)) airvickPushWeb();
-	                   
-}
-void inline airvickPushWeb() {
+	else if (get_field_value(message, "fanStart:", &ULValue, &floalValue)) fan.webStartFunc(ULValue);
+	else if (message.indexOf( "fanStop:")!= -1)fan.webStart=false;
+	else if (message.indexOf("airvickPush:") != -1) deodorantSpray();
+	else if (message.indexOf("lightOn:") != -1) {digitalWrite(light, HIGH);}
+	else if (message.indexOf("lightOff:") != -1) { Sensor.humanBodyDeteckted = false; digitalWrite(light, LOW); }
 
 }
-void inline fanStopWeb() {
-	SeccountT = 0;
-	fanStart = false;
-}
-void inline fanStartWeb(int timeToStart) {
-	fanStart = true;
-	SeccountT = timeToStart;
-	humidWarningPause = false;
-}
-bool get_field_value(String Message, String field, unsigned long* value, int* index) {
-	int fieldBegin = Message.indexOf(field) + field.length();
-	int check_field = Message.indexOf(field);
-	int ii = 0;
-	*value = 0;
-	*index = 0;
-	bool indFloat = false;
-	if (check_field != -1) {
-		int filedEnd = Message.indexOf(';', fieldBegin);
-		if (filedEnd == -1) { return false; }
-		int i = 1;
-		char ch = Message[filedEnd - i];
-		while (ch != ' ' && ch != ':') {
-			if (isDigit(ch)) {
-				int val = ch - 48;
-				if (!indFloat)ii = i - 1;
-				else ii = i - 2;
-				*value = *value + ((val * pow(10, ii)));
-			}
-			else if (ch == '.') { *index = i - 1; indFloat = true; }
-			i++;
-			if (i > (filedEnd - fieldBegin + 1) || i > 10)break;
-			ch = Message[filedEnd - i];
-		}
 
-	}
-	else return false;
+bool get_field_value(String Message, String field, unsigned long* ulValue=0, float* floatValue=0) {
+	int filedFirstLit = Message.indexOf(field);
+	if (filedFirstLit == -1) return false;
+	int fieldBegin = filedFirstLit + field.length();
+	int fieldEnd = Message.indexOf(';', fieldBegin);
+	String fieldString = Message.substring(fieldBegin, fieldEnd);
+	*floatValue = fieldString.toFloat();
+	*ulValue = fieldString.toDouble();
+	LOG(*floatValue)
+	LOG(*ulValue)
 	return true;
 }
 
-void humidArray(int sensorRead)  {
-	int i,ii, sum=0;
-   float humidAverRead;
-   
-    for (i=0; i<sensorRead; i++){sum+=sensorData[i][1];} // count average read for a minut from sensor
-   humidAverRead=sum/sensorRead;
-   if (HumidAver ==0)HumidAver=humidAverRead;
-   if (humidAverRead-HumidAver>humidWarningThreshod){humidWarning=true;}
-   else { countHumid(humidAverRead);
-          addHumidToArray=false; //reset adding humid to array after once added
-		  if (humidWarning) { digitalWrite(LED1, LOW); digitalWrite(LED2, LOW); digitalWrite(LED3, LOW); }//solving issue with occasional LED
-          humidWarning=false;
-          humidWarningPause=false;
-          timers[10]=millis(); // resetting timers in case of rising humid while fan on (without humid warning)
-         }
-    if (addHumidToArray && !test){for (ii=0;ii<3;ii++){countHumid(humidAverRead);} // onec add data to humid array in case of pause
-                         addHumidToArray=false;}
-    if (humidWarningPause && humidAverRead-HumidAver<=humidWarningThreshod)humidWarningPause=false;
-    if (humidWarning && !fanStart)timers[10]=millis();  
-    
-  
-  }
-void countHumid(float humidAverRead){
-  humidStored++;
-  int sumOverall=0;
-  int ii;
- humid[humidStored]=(int)humidAverRead;  // for initial start before 100 have counted
-  if (!coutnFull) {for (ii=1;ii<=humidStored;ii++){sumOverall+=humid[ii];}
-		  if (humidGotFromServer > 0) {
-			  HumidAver = humidGotFromServer;//assign humid value for server after restart
-			  for (int iii = 0; iii < maxHumStored; iii++) humid[iii]= humidGotFromServer;
-			  coutnFull = true;
-			  Serial.println("the humidity array filled with humidity got from server " + String(humidGotFromServer));
-		  }
-			else HumidAver=sumOverall/humidStored;
+void inline setDark() {
+	digitalWrite(LED1, LOW); digitalWrite(LED2, LOW); digitalWrite(LED3, LOW);
 }
-          else {for (ii=1;ii< maxHumStored;ii++){sumOverall+=humid[ii];}
-                    HumidAver=sumOverall/(maxHumStored-1);
-               }
- if (humidStored==(maxHumStored-1)){coutnFull=true;
-                                     humidStored=0;} //return to the beginning of the array when its full
+void LEDcontrol(unsigned long timeLeft, unsigned long timeOfOneLED, bool flashing) {
+	unsigned long brightness;
+	static bool LEDon;
+	if (!timeLeft && !timeOfOneLED) {
+		setDark();  return;
+	}
+	if (flashing && LEDon) { setDark(); LEDon = false;   return; }
+	LOGL("timeLeft=" + String(timeLeft) + " timeOfOneLED=" + String(timeOfOneLED) + " ")
+		LOG("timeLeft:" + String(timeLeft) + ";timeOfOneLED:" + String(timeOfOneLED) + ";");
+	LEDon = true;
+	if (timeLeft > 2 * timeOfOneLED) {
+		brightness = ((timeLeft - timeOfOneLED * 2) * 255) / timeOfOneLED;
+		analogWrite(LED1, brightness);
+		analogWrite(LED2, 255);
+		analogWrite(LED3, 255);
+		LOG("3 br=" + String(brightness))
+	}
+	else if (timeLeft > timeOfOneLED && timeLeft <= 2 * timeOfOneLED) {
+		brightness = ((timeLeft - timeOfOneLED) * 255) / timeOfOneLED;
+		analogWrite(LED1, 0);
+		analogWrite(LED2, brightness);
+		analogWrite(LED3, 255);
+		LOG("2 br=" + String(brightness))
+	}
+	else if (timeLeft > 0 && timeLeft <= timeOfOneLED) {
+		brightness = (timeLeft * 255) / timeOfOneLED;
+		analogWrite(LED1, 0);
+		analogWrite(LED2, 0);
+		analogWrite(LED3, brightness);
+		LOG("1 br=" + String(brightness))
+	}
+	else {
+		analogWrite(LED3, 0);
+		LEDon = false;
+	}
 
 }
-void LEDcontrol(int long t,int long s, bool flashing){
-  int long brightness;
-  if (flashing && LEDFlashOn){digitalWrite(LED1,LOW);digitalWrite(LED2,LOW);digitalWrite(LED3,LOW); LEDFlashOn=false; return;}
-  if (flashing && !LEDFlashOn)LEDFlashOn=true;
-
-            if (t> 2*s){
-                brightness=((t-s*2)*255)/s;
-                analogWrite(LED1,brightness);
-                analogWrite(LED2,255);
-                analogWrite(LED3,255);
-                Serial.print("1 br=");Serial.println(brightness);
-                }
-            else if (t>s && t<= 2*s){
-                brightness=((t-s)*255)/s;
-                analogWrite(LED1,0);
-                analogWrite(LED2,brightness);
-                analogWrite(LED3,255);
-               Serial.print("2 br=");Serial.println(brightness);
-                }
-             else if (t>0 && t<=s) {brightness=(t*255)/s;
-                analogWrite(LED1,0);
-               analogWrite(LED2,0);
-               analogWrite(LED3,brightness);
-               Serial.print("3 br=");Serial.println(brightness);
-               }
-             else analogWrite(LED3,0);
-          
-}
-  
-bool timer(int tNumber, unsigned long tDelay){
-  unsigned long current=millis();
-    if (current>(timers[tNumber]+tDelay)){
-     timers[tNumber]=current; return true;
-     }
-    else return false;
+bool getSensorData() {
+	
+	bool datamissed = false;
+	switch (sensor.Read()) {
+	case 2:
+		LOG("CRC failed")
+		datamissed = true;
+		break;
+	case 1:
+		LOG("Sensor offline")
+		datamissed = true;
+		break;
+	case 0:
+		LOGL("Humidity: ")
+		LOG(sensor.h)
+		Sensor.humidity = sensor.h;
+		LOGL("%\t Temperature: ");
+		LOG(sensor.t)
+		Sensor.temp = sensor.t;
+		LOG("*C")
+		break;
+	}
+	if (!datamissed) {
+		humid.addToHumidReadArray();
+		return true;		
+	}
+	return false;
 }
 
-void getSensorData (int sessions){
-	byte state=B00000000;// construction of state
-      float temp, humidity;
-      bool datamissed=false;
-      switch(sensor.Read()) {
-    case 2:
-      Serial.println("CRC failed");
-      datamissed=true;
-      break;
-    case 1:
-      Serial.println("Sensor offline");
-      datamissed=true;
-      break;
-    case 0:
-      Serial.print("Humidity: ");
-      Serial.print(sensor.h);
-      humidity = sensor.h;
-      Serial.print("%\t Temperature: ");
-      Serial.print(sensor.t);
-      temp = sensor.t;
-      Serial.println("*C");
-      break;
-  }
-  if (!datamissed){
-                    sensorData[sessions][0] = temp;
-                    sensorData[sessions][1] = humidity;
-                    if (HumidAver <100 ) {sensorData[sessions][2]=HumidAver;}
-                    else {sensorData[sessions][2]=10;}
-					if (fanStart)bitWrite(state, 0, 1);
-					if (humanBodyDeteckted)bitWrite(state, 1, 1);
-					if (humidWarningPause)bitWrite(state, 2, 1);
-					if (humidWarning)bitWrite(state, 3, 1);
-					if (coutnFull)bitWrite(state, 4, 1);
-					if (addHumidToArray)bitWrite(state, 5, 1);
-					if (buttonPresedWhilePause)bitWrite(state, 6, 1);
-					if (!lightOff)bitWrite(state, 7, 1);
-					sensorData[sessions][3] =int(state);
-				    humanBodyDeteckted=false;//reset body detection after writing to send data
-                    }
-   else {session--;}
-}
-
-  void dataSending(int rows){
-  int is; size_t lengthT;
-  for (is=0; is<=rows; is++){
-  strcat(dataSent,"{10,");
-  int is2;
-  for (is2=0;is2<4;is2++){ 
-  lengthT = String(sensorData[is][is2]).length();
-  char temp[4];
-  String(sensorData[is][is2]).toCharArray(temp,lengthT+1);
-  strcat(dataSent,temp);
-  strcat(dataSent,",");}
-  lengthT = strlen(dataSent);
-  dataSent[lengthT-1]='}';}
-  esp8266.println(dataSent); 
-  Serial.println(dataSent);
-  //Serial.print("dataSent ");
-  Serial.println(dataSent); 
-  dataSent[0]='\0';
+void dataSending() {
+	byte state = B00000000;// construction of state
+	if (fan.deodorantActivated)bitWrite(state, 0, 1);
+	if (Sensor.humanBodyDeteckted)bitWrite(state, 1, 1);
+	if (fan.buttonStart)bitWrite(state, 2, 1);
+	if (fan.fanWork)bitWrite(state, 3, 1);
+	if (fan.webStart)bitWrite(state, 4, 1);
+	if (fan.humidStart)bitWrite(state, 5, 1);
+	if (humid.coutnFull)bitWrite(state, 6, 1);
+	if (digitalRead(light))bitWrite(state, 7, 1);
+	Sensor.humanBodyDeteckted = false;//reset body detection after writing to send data
+	String datatToSend = "{" + String(Sensor.temp) + "," + String(humid.humidAverRead) +"," + String(humid.HumidAver) +","+ String(state,HEX) + "}";//int(state)
+	Serial.println(datatToSend);
+	LOG(datatToSend)
 }
